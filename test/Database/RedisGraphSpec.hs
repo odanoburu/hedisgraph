@@ -44,8 +44,8 @@ spec =
       `shouldReturn` [[I (-9223372036854775807)]]
 
     it "returns text"
-      $ redis (query "redisgraph-test" "RETURN 'iraçú-porã α🤔ఓ' AS text")
-      `shouldReturn` [[T "iraçú-porã α🤔ఓ"]]
+      $ redis (query "redisgraph-test" "RETURN 'iraçú-porã α\129300ఓ' AS text")
+      `shouldReturn` [[T "iraçú-porã α\129300ఓ"]]
 
     it "returns float"
       $ redis (query "redisgraph-test" "RETURN 1.1415 AS float")
