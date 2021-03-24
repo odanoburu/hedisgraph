@@ -1,3 +1,7 @@
 resolver: lts-15.5
 extra-deps:
   - string-interpolate-0.1.0.1@sha256:6efbc888a2986ee80ddd014fded600de113554684fe5eaca87cf02ab59cfa95c,1999
+  - hasbolt-0.1.4.3@sha256:304cd7f538e2e0c057f365dfe6282ccf9482702ba89e6a6fe6afdec16290a08a,2415
+packages:
+  - .
+  - hedisgraph-hasbolt/

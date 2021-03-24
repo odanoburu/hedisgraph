@@ -1,0 +1,6 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "hedisgraph-hasbolt:lib"
+    - path: "./test/"
+      component: "hedisgraph-hasbolt:test:hedisgraph-hasbolt-test"
