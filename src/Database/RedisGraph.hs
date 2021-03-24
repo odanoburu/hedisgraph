@@ -14,9 +14,9 @@ the @hedis@ library (you must know how to use @hedis@ to use @hedisgraph@).
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 module Database.RedisGraph
-  ( Node(..), Path(..), Record, Relationship(..), QueryResult(..), Value(..)
+  ( Node(..), Path(..), Record, Redis, Relationship(..), QueryResult(..), Value(..)
   , query, queryP
-  , Redis.runRedis)
+  , runRedisGraph)
 where
 
 import Data.ByteString (ByteString)
@@ -221,3 +221,10 @@ cypherDecode r = decodingErr $ "top level\n  " ++ show r
 
 decodingErr :: String -> a
 decodingErr msg = error $ "Decoding error: unexpected format for " ++ msg
+
+runRedisGraph :: Redis.ConnectInfo -> Redis a -> IO a
+runRedisGraph cInfo redis = do
+  conn <- Redis.checkedConnect cInfo
+  res <- Redis.runRedis conn redis
+  Redis.disconnect conn
+  return res
