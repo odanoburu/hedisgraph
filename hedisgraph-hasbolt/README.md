@@ -1,7 +1,7 @@
 # hedisgraph-hasbolt
 
-Package offering compatibility between `hedisgraph` and `hasbolt`
-types.
+Package offering compatibility between `hedisgraph` and
+[`hasbolt`](https://hackage.haskell.org/package/hasbolt) types.
 
 ## Why?
 

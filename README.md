@@ -34,3 +34,11 @@ This library is very much a work-in-progress.
   simple approach of using `error` for errors that *shouldn't* happen
   is taken, and everything else is handled by `hedis`.
 - There has been no optimization effort as of yet.
+
+
+## Additional goods
+
+There is also a package attempting to provide compatibility with the
+[`hasbolt`](https://hackage.haskell.org/package/hasbolt) library,
+since both libraries deal with data stores using the Cypher graph
+query language.
