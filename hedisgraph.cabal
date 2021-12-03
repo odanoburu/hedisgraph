@@ -21,7 +21,7 @@ source-repository head
   location:            https://github.com/odanoburu/hedisgraph.git
 
 common common-options
-  build-depends:       base >= 4.12.0.0 && < 4.14,
+  build-depends:       base >= 4.12.0.0 && <= 4.15,
                        containers == 0.6.*,
                        hedis == 0.12.*,
                        bytestring == 0.10.*
