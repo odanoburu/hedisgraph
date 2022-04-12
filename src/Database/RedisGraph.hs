@@ -14,16 +14,23 @@ the @hedis@ library (you must know how to use @hedis@ to use @hedisgraph@).
 {-# OPTIONS_HADDOCK show-extensions #-}
 
 module Database.RedisGraph
-  ( Node(..), Path(..), Record, Redis, Relationship(..), QueryResult(..), Value(..)
+  ( Node(..), Path(..), Record, Redis, Relationship(..), QueryResult(..), Value(..), Parameters
   , query, queryP
   , runRedisGraph)
 where
 
+import Data.Char
+import Data.Text (Text)
+import qualified Data.Text as Text
+import Data.Text.Encoding as Encoding
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as BC
 import Database.Redis (Redis, Reply(..))
 import qualified Database.Redis as Redis
+--import Debug.Trace (trace)
 
 type Label = Integer
 type Property = Integer
@@ -55,21 +62,22 @@ data Value
   = B !Bool
   | F !Double
   | I !Integer -- could be Int64, but hedis uses Integer
-  | L [Value]
+  | L ![Value]
+  | M !(Map Text Value)
   | N
-  | P Path
-  | R Relationship
-  | T ByteString
-  | V Node
+  | P !Path
+  | R !Relationship
+  | T !Text
+  | V !Node
   deriving stock (Eq, Show)
 
-type Query = ByteString
+type Query = Text
 type GraphName = ByteString
-type Parameters = [(ByteString, Value)]
+type Parameters = [(Text, Value)]
 
 redisGraphQuery :: ByteString -> ByteString -> Redis (Either Reply ByteString)
-redisGraphQuery graph q
-  = Redis.sendRequest ["GRAPH.QUERY", graph, q, "--compact"]
+redisGraphQuery graph rawQuery
+  = Redis.sendRequest ["GRAPH.QUERY", graph, rawQuery, "--compact"]
 
 -- query_ :: GraphName -> Query -> Redis ()
 -- -- TODO: how best to check if there was an error?
@@ -78,33 +86,46 @@ redisGraphQuery graph q
 --   return ()
 
 query :: GraphName -> Query -> Redis QueryResult
-query graph q = cypherDecode <$> redisGraphQuery graph q
+query graph q = cypherDecode <$> redisGraphQuery graph (Encoding.encodeUtf8 q)
 
 queryP :: GraphName -> Query -> Parameters -> Redis QueryResult
 queryP g q ps
   | null ps = query g q
-  | otherwise = query g q'
+  -- NOTE: repeats 'query', but since it's short, I'm fine with it
+  | otherwise = cypherDecode <$> redisGraphQuery g q'
   where
-    q' = encodeParameters ps <> q
-
--- queryP_ :: GraphName -> ByteString -> Parameters -> Redis ()
--- queryP_ g q ps
---   | null ps = query_ g q
---   | otherwise = query_ g q'
---   where
---     q' = encodeParameters ps <> q
+    q' = encodeParameters ps <> (Encoding.encodeUtf8 q)
 
 encodeParameters :: Parameters -> ByteString
-encodeParameters ps = "CYPHER " <> BC.unwords (fmap go ps) <> ";"
+encodeParameters ps = "CYPHER " <> BC.unwords (fmap go ps) <> " "
   where
-    go (name, v) = name <> "=" <> encodeValue v
+    go (name, v) = encodeEscapeName name <> "=" <> encodeValue v
+    encodeEscapeName = Encoding.encodeUtf8 . escapeName
+    escapeName name =
+      if Text.all isAlphaNum name
+      then name
+      else -- needs escaping
+        escaped
+      where
+        -- NOTE: could be made more complex if escaping is
+        -- implemented
+        -- https://github.com/RedisGraph/RedisGraph/issues/1187
+        escaped = Text.cons '`' . (`Text.snoc` '`') $ Text.filter (/= '`') name
     encodeValue N{} = "null"
     encodeValue (B True) = "true"
     encodeValue (B False) = "false"
     encodeValue (I n) = BC.pack $ show n
     encodeValue (F n) = BC.pack $ show n
     encodeValue (L xs) = "[" <> B.intercalate "," (fmap encodeValue xs) <> "]"
-    encodeValue (T t) = BC.pack $ show t -- easiest way to get string as literal 😢
+    encodeValue (T t) = Encoding.encodeUtf8 . flip Text.snoc '"' . Text.cons '"' $ Text.concatMap encodeChars t
+      where
+        encodeChars = \case
+          '"' -> "\\\""
+          '\\' ->  "\\\\"
+          c -> Text.singleton c
+    encodeValue (M m) = "{" <> B.intercalate "," (fmap encodePair $ Map.toList m) <> "}"
+      where
+        encodePair (k, v) = encodeEscapeName k <> ":" <> encodeValue v
     encodeValue V{} = encodingErr "node"
     encodeValue R{} = encodingErr "relationship"
     encodeValue P{} = encodingErr "path"
@@ -166,6 +187,7 @@ cypherDecode (Left (MultiBulk (Just topLevel)))
           where
             decodeValue (MultiBulk (Just (valueType:xs))) =
               (case valueType of
+                Integer 0 -> error "Decoding error: unknown value type"
                 Integer 1 -> const N -- null
                 Integer 2 -> decodeStr -- string/text
                 Integer 3 -> decodeInt -- integer
@@ -175,13 +197,15 @@ cypherDecode (Left (MultiBulk (Just topLevel)))
                 Integer 7 -> R . decodeEdge -- edge
                 Integer 8 -> V . decodeNode -- node
                 Integer 9 -> decodePath -- path
-                _ -> decodingErr "value type") xs
+                Integer 10 -> decodeMap -- map
+                Integer 11 -> decodePoint -- TODO: point
+                _ -> error "Decoding error: value type not suported yet") xs
               where
                 decodeInt [Integer n] = I n
                 decodeInt _ = decodingErr "integer"
                 decodeBool [Bulk (Just b)] = case b of "true" -> B True; _ -> B False
                 decodeBool _ = decodingErr "boolean"
-                decodeStr [Bulk (Just s)] = T s
+                decodeStr [Bulk (Just s)] = T (Encoding.decodeUtf8 s)
                 decodeStr _ = decodingErr "string"
                 -- bad implementation
                 decodeDouble [Bulk (Just d)] = F . read $ BC.unpack d
@@ -212,6 +236,15 @@ cypherDecode (Left (MultiBulk (Just topLevel)))
                 decodeProperty (MultiBulk (Just [Integer propId, propType, value]))
                   = (propId, ) . decodeValue $ MultiBulk $ Just (propType : [value])
                 decodeProperty _ = decodingErr "property"
+                decodeMap [MultiBulk (Just vs)] = M $ decodePairs mempty vs
+                  where
+                    decodePairs :: Map Text Value -> [Reply] -> Map Text Value
+                    decodePairs mapSoFar = \case
+                      Bulk (Just k) : v : vs' -> decodePairs (Map.insert (Encoding.decodeUtf8 k) (decodeValue v) mapSoFar) vs'
+                      [] -> mapSoFar
+                      _ -> decodingErr "key-value pair"
+                decodeMap _ = decodingErr "map"
+                decodePoint _ = error "Decoding error: points not implemented yet"
             decodeValue _ = decodingErr "value"
         decodeLine _ = decodingErr "line"
     decodeResults _ = decodingErr "results"

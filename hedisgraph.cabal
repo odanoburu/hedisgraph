@@ -24,7 +24,8 @@ common common-options
   build-depends:       base >= 4.12.0.0 && <= 4.15,
                        containers == 0.6.*,
                        hedis == 0.12.*,
-                       bytestring == 0.10.*
+                       bytestring == 0.10.*,
+                       text == 1.2.*
 
   ghc-options:         -Wall
                        -Wcompat
@@ -51,7 +52,8 @@ library
                         TupleSections,
                         NamedFieldPuns,
                         DuplicateRecordFields,
-                        DisambiguateRecordFields
+                        DisambiguateRecordFields,
+                        LambdaCase
   exposed-modules:     Database.RedisGraph
 
 test-suite hedisgraph-test

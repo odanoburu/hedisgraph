@@ -3,6 +3,7 @@ module Database.RedisGraphSpec where
 
 import Database.Redis
 import Database.RedisGraph
+import qualified Data.Map as Map
 import Test.Hspec
 import Data.String.Interpolate (i)
 
@@ -57,14 +58,22 @@ spec =
       `shouldReturn` [[L [N, B True, I 1, I (-1), T "opa", F 3.2
                                   , L [N, B True, I 1, I (-1), T "opa", F 3.2]]]]
 
+
+    it "returns map"
+      $ redis (query "redisgraph-test"
+               "RETURN {a: 2, `⊥a`: \"op¬\", `c`: [1,\"d\"]} AS map")
+      `shouldReturn` [[M (Map.fromList [("a", I 2), ("⊥a", T "op¬"), ("c", L [I 1, T "d"])])]]
+
     it "returns node"
       $ redis (query "redisgraph-test"
                "CREATE (n:Test {i: 1}) RETURN n AS node")
       -- NOTE: there is no way of knowing what the node id will be, so we use a
-      -- negative one mostly to check that there's no encoding error
+      -- negative test mostly to check that there's no encoding error
       --- FIXME: could be made better by checking properties and labels, but
       --- before we add the decoding of their IDs they'll have the same problem
       --- as node (and relationship) IDs
+      -- TODO: implement custom tester that ignores IDs and tests
+      -- everything else
       `shouldNotReturn` [[V (Node (-1) [0] [(0, I 1)])]]
 
     it "returns relationship"
